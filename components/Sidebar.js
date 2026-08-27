@@ -38,7 +38,7 @@ function NavItem({ href, label }) {
   const active =
     typeof window !== "undefined" && window.location.pathname === href;
   return (
-    
+    <a
       href={href}
       className={
         "text-[13px] px-2.5 py-1.5 rounded-md " +
