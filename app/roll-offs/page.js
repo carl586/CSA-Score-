@@ -4,12 +4,18 @@ import { useEffect, useState } from "react";
 import TopBar from "../../components/TopBar";
 import { BASICS } from "../../lib/calc";
 
+function nextMonthLabel() {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
 export default function RollOffsPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [basic, setBasic] = useState("all");
-  const [months, setMonths] = useState(12);
+  const [months, setMonths] = useState(1);
 
   const load = async () => {
     setLoading(true);
@@ -49,6 +55,7 @@ export default function RollOffsPage() {
               onChange={(e) => setMonths(Number(e.target.value))}
               className="text-[13px] border border-line rounded-md px-3 py-1.5 bg-white"
             >
+              <option value={1}>Next {nextMonthLabel()}</option>
               <option value={3}>Next 3 months</option>
               <option value={6}>Next 6 months</option>
               <option value={12}>Next 12 months</option>
@@ -79,7 +86,6 @@ export default function RollOffsPage() {
           </div>
         ) : (
           <>
-            {/* Totals */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
               <div className="rounded-lg border border-line p-3">
                 <div className="text-[11px] text-muted mb-1">Events</div>
@@ -91,7 +97,6 @@ export default function RollOffsPage() {
               </div>
             </div>
 
-            {/* By month */}
             <div className="mb-6 border border-line rounded-lg overflow-hidden">
               <div className="px-4 py-2.5 bg-panel text-[11px] font-semibold tracking-wide text-muted uppercase">
                 By month
@@ -110,7 +115,6 @@ export default function RollOffsPage() {
               ))}
             </div>
 
-            {/* Detail table */}
             <div className="border border-line rounded-lg overflow-hidden">
               <div className="grid grid-cols-[100px_1.2fr_1fr_90px_100px_90px_100px_80px] gap-2 px-4 py-2.5 bg-panel text-[11px] font-semibold tracking-wide text-muted uppercase">
                 <span>When</span>
@@ -122,7 +126,7 @@ export default function RollOffsPage() {
                 <span>Driver / unit</span>
                 <span>In</span>
               </div>
-              {data.events.map((e, i) => (
+              {data.events.map((e) => (
                 <div
                   key={`${e.id}-${e.transitionAt}-${e.transitionLabel}`}
                   className="grid grid-cols-[100px_1.2fr_1fr_90px_100px_90px_100px_80px] gap-2 px-4 py-3 items-center border-t border-line text-[13px]"
