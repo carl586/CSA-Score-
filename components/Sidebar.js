@@ -13,6 +13,7 @@ export default function Sidebar() {
 
       <NavGroup label="Overview">
         <NavItem href="/" label="Dashboard" />
+        <NavItem href="/roll-offs" label="Rolling off" />
       </NavGroup>
 
       <NavGroup label="Compliance">
