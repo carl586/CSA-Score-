@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BASICS } from "../lib/calc";
+
+function normalizeCode(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
 
 export default function AddViolationModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -15,12 +21,49 @@ export default function AddViolationModal({ onClose, onSaved }) {
     unit: "",
     carrier: "",
   });
+  const [codes, setCodes] = useState([]);
+  const [matched, setMatched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/violation-codes")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => setCodes(Array.isArray(rows) ? rows : []))
+      .catch(() => setCodes([]));
+  }, []);
 
   const set = (key) => (e) => {
     const val = e.target.type === "checkbox" ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [key]: val }));
+  };
+
+  const onCodeChange = (e) => {
+    const code = e.target.value;
+    const norm = normalizeCode(code);
+    const hit = codes.find((c) => normalizeCode(c.code) === norm);
+
+    if (hit) {
+      // Map BASIC from DB to app ids if needed
+      const basicId =
+        BASICS.find(
+          (b) =>
+            b.id === hit.basic ||
+            b.label.toLowerCase() === String(hit.basic || "").toLowerCase()
+        )?.id || hit.basic;
+
+      setForm((f) => ({
+        ...f,
+        code,
+        description: hit.description || "",
+        basic: basicId || f.basic,
+        severity: Number(hit.severity_weight) || f.severity,
+      }));
+      setMatched(true);
+    } else {
+      setForm((f) => ({ ...f, code }));
+      setMatched(false);
+    }
   };
 
   const submit = async (e) => {
@@ -46,7 +89,10 @@ export default function AddViolationModal({ onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
@@ -54,35 +100,91 @@ export default function AddViolationModal({ onClose, onSaved }) {
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-[15px]">Add violation</h3>
-          <button type="button" onClick={onClose} className="text-muted text-xl leading-none">&times;</button>
+          <button type="button" onClick={onClose} className="text-muted text-xl leading-none">
+            &times;
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Violation date">
-            <input type="date" required value={form.date} onChange={set("date")} max={new Date().toISOString().slice(0, 10)} className="input" />
+            <input
+              type="date"
+              required
+              value={form.date}
+              onChange={set("date")}
+              max={new Date().toISOString().slice(0, 10)}
+              className="input"
+            />
           </Field>
+
           <Field label="Violation code">
-            <input type="text" placeholder="e.g. 393.75(a)" value={form.code} onChange={set("code")} className="input" />
+            <input
+              type="text"
+              placeholder="e.g. 393.75(a)"
+              value={form.code}
+              onChange={onCodeChange}
+              list="violation-code-list"
+              className="input"
+              autoComplete="off"
+            />
+            <datalist id="violation-code-list">
+              {codes.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.description || c.code}
+                </option>
+              ))}
+            </datalist>
+            {matched ? (
+              <span className="text-[11px] text-green mt-0.5">
+                Matched — description, BASIC & severity filled
+              </span>
+            ) : form.code ? (
+              <span className="text-[11px] text-muted mt-0.5">
+                No match in code library — fill fields manually
+              </span>
+            ) : null}
           </Field>
+
           <Field label="Description" full>
-            <input type="text" placeholder="e.g. Tire tread depth" value={form.description} onChange={set("description")} className="input" />
+            <input
+              type="text"
+              placeholder="e.g. Tire tread depth"
+              value={form.description}
+              onChange={set("description")}
+              className="input"
+            />
           </Field>
+
           <Field label="BASIC category">
             <select value={form.basic} onChange={set("basic")} className="input">
               {BASICS.map((b) => (
-                <option key={b.id} value={b.id}>{b.label}</option>
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
               ))}
             </select>
           </Field>
+
           <Field label="Severity weight (1-10)">
-            <input type="number" min="1" max="10" required value={form.severity} onChange={set("severity")} className="input" />
+            <input
+              type="number"
+              min="1"
+              max="10"
+              required
+              value={form.severity}
+              onChange={set("severity")}
+              className="input"
+            />
           </Field>
+
           <Field label="Driver (optional)">
             <input type="text" value={form.driver} onChange={set("driver")} className="input" />
           </Field>
+
           <Field label="Unit (optional)">
             <input type="text" value={form.unit} onChange={set("unit")} className="input" />
           </Field>
+
           <label className="flex items-center gap-2 text-[13px] col-span-2 mt-1">
             <input type="checkbox" checked={form.oos} onChange={set("oos")} />
             Out-of-service order issued
@@ -92,10 +194,18 @@ export default function AddViolationModal({ onClose, onSaved }) {
         {error && <div className="text-red text-[12px] mt-3">{error}</div>}
 
         <div className="flex justify-end gap-2 mt-5">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-line text-[13px]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-md border border-line text-[13px]"
+          >
             Cancel
           </button>
-          <button type="submit" disabled={saving} className="px-4 py-2 rounded-md bg-ink text-white text-[13px] font-medium disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-4 py-2 rounded-md bg-ink text-white text-[13px] font-medium disabled:opacity-50"
+          >
             {saving ? "Saving..." : "Add to record"}
           </button>
         </div>
