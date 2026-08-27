@@ -11,20 +11,13 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <NavGroup label="Act">
-        <NavItem href="/" label="Review queue" />
+      <NavGroup label="Overview">
+        <NavItem href="/" label="Dashboard" />
       </NavGroup>
 
       <NavGroup label="Compliance">
-        <NavItem href="/" label="Ranked list" active />
-      </NavGroup>
-
-      <NavGroup label="Fleet">
-        <NavItem href="/" label="Units" />
-      </NavGroup>
-
-      <NavGroup label="Administration">
-        <NavItem href="/" label="Users" />
+        <NavItem href="/violations" label="Violations" />
+        <NavItem href="/codes" label="Violation codes" />
       </NavGroup>
     </aside>
   );
@@ -41,9 +34,11 @@ function NavGroup({ label, children }) {
   );
 }
 
-function NavItem({ href, label, active }) {
+function NavItem({ href, label }) {
+  const active =
+    typeof window !== "undefined" && window.location.pathname === href;
   return (
-    <a
+    
       href={href}
       className={
         "text-[13px] px-2.5 py-1.5 rounded-md " +
