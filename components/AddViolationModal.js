@@ -6,7 +6,58 @@ import { BASICS } from "../lib/calc";
 function normalizeCode(s) {
   return String(s || "")
     .toLowerCase()
-    .replace(/\s+/g, "");
+    .replace(/\s+/g, "")
+    .replace(/[()]/g, ""); // also ignore parens differences
+}
+
+// Map whatever is stored in violation_codes.basic → app id
+function mapBasic(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+
+  // exact app ids
+  const byId = BASICS.find((b) => b.id === s);
+  if (byId) return byId.id;
+
+  // exact labels
+  const byLabel = BASICS.find((b) => b.label.toLowerCase() === s);
+  if (byLabel) return byLabel.id;
+
+  // common aliases from FMCSA / exports
+  const aliases = {
+    "unsafe driving": "unsafe_driving",
+    "unsafe_driving": "unsafe_driving",
+    ud: "unsafe_driving",
+    hos: "hos",
+    "hours of service": "hos",
+    "hours-of-service": "hos",
+    "hours-of-service compliance": "hos",
+    "hos compliance": "hos",
+    "driver fitness": "driver_fitness",
+    "driver_fitness": "driver_fitness",
+    fitness: "driver_fitness",
+    substance: "substance",
+    "controlled substances": "substance",
+    "controlled substances / alcohol": "substance",
+    "controlled substances/alcohol": "substance",
+    alcohol: "substance",
+    "vehicle maintenance": "vehicle_maint",
+    "vehicle_maint": "vehicle_maint",
+    "vehicle maint": "vehicle_maint",
+    maintenance: "vehicle_maint",
+    vm: "vehicle_maint",
+    hazmat: "hazmat",
+    "hazardous materials": "hazmat",
+    "hazardous materials compliance": "hazmat",
+    hm: "hazmat",
+    crash: "crash",
+    "crash indicator": "crash",
+  };
+
+  for (const [k, v] of Object.entries(aliases)) {
+    if (s === k || s.includes(k)) return v;
+  }
+  return null;
 }
 
 export default function AddViolationModal({ onClose, onSaved }) {
@@ -14,15 +65,15 @@ export default function AddViolationModal({ onClose, onSaved }) {
     date: new Date().toISOString().slice(0, 10),
     code: "",
     description: "",
-    basic: BASICS[0].id,
-    severity: 5,
+    basic: "",
+    severity: "",
     oos: false,
     driver: "",
     unit: "",
     carrier: "",
   });
   const [codes, setCodes] = useState([]);
-  const [matched, setMatched] = useState(false);
+  const [status, setStatus] = useState(""); // matched | missing | ""
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -38,32 +89,47 @@ export default function AddViolationModal({ onClose, onSaved }) {
     setForm((f) => ({ ...f, [key]: val }));
   };
 
-  const onCodeChange = (e) => {
-    const code = e.target.value;
+  const applyCode = (code) => {
     const norm = normalizeCode(code);
-    const hit = codes.find((c) => normalizeCode(c.code) === norm);
+    if (!norm) {
+      setStatus("");
+      setForm((f) => ({ ...f, code }));
+      return;
+    }
+
+    // exact normalized match first, then startsWith for partial paste
+    let hit =
+      codes.find((c) => normalizeCode(c.code) === norm) ||
+      codes.find((c) => normalizeCode(c.code).startsWith(norm)) ||
+      codes.find((c) => norm.startsWith(normalizeCode(c.code)));
 
     if (hit) {
-      // Map BASIC from DB to app ids if needed
-      const basicId =
-        BASICS.find(
-          (b) =>
-            b.id === hit.basic ||
-            b.label.toLowerCase() === String(hit.basic || "").toLowerCase()
-        )?.id || hit.basic;
-
+      const basicId = mapBasic(hit.basic) || "";
       setForm((f) => ({
         ...f,
         code,
         description: hit.description || "",
-        basic: basicId || f.basic,
-        severity: Number(hit.severity_weight) || f.severity,
+        basic: basicId,
+        severity: String(hit.severity_weight ?? ""),
       }));
-      setMatched(true);
+      setStatus(basicId ? "matched" : "basic-unknown");
     } else {
-      setForm((f) => ({ ...f, code }));
-      setMatched(false);
+      setForm((f) => ({
+        ...f,
+        code,
+        // leave other fields alone so user can type freely if unknown
+      }));
+      setStatus("missing");
     }
+  };
+
+  const onCodeChange = (e) => applyCode(e.target.value);
+
+  // also catch paste events reliably
+  const onCodePaste = (e) => {
+    const text = (e.clipboardData || window.clipboardData).getData("text");
+    // let the input update, then apply
+    setTimeout(() => applyCode(text.trim()), 0);
   };
 
   const submit = async (e) => {
@@ -71,10 +137,16 @@ export default function AddViolationModal({ onClose, onSaved }) {
     setSaving(true);
     setError("");
     try {
+      if (!form.basic) throw new Error("BASIC category is required — pick one or use a known code");
+      if (!form.severity) throw new Error("Severity weight is required");
+
       const res = await fetch("/api/violations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, severity: Number(form.severity) }),
+        body: JSON.stringify({
+          ...form,
+          severity: Number(form.severity),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -120,43 +192,51 @@ export default function AddViolationModal({ onClose, onSaved }) {
           <Field label="Violation code">
             <input
               type="text"
-              placeholder="e.g. 393.75(a)"
+              placeholder="Paste code, e.g. 395.8(e)"
               value={form.code}
               onChange={onCodeChange}
+              onPaste={onCodePaste}
               list="violation-code-list"
               className="input"
               autoComplete="off"
             />
             <datalist id="violation-code-list">
-              {codes.map((c) => (
+              {codes.slice(0, 500).map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.description || c.code}
                 </option>
               ))}
             </datalist>
-            {matched ? (
+            {status === "matched" && (
               <span className="text-[11px] text-green mt-0.5">
-                Matched — description, BASIC & severity filled
+                Matched — description, BASIC & severity filled (you can still edit severity)
               </span>
-            ) : form.code ? (
+            )}
+            {status === "basic-unknown" && (
+              <span className="text-[11px] text-amber mt-0.5">
+                Code found, but BASIC value in library is unknown — pick BASIC manually
+              </span>
+            )}
+            {status === "missing" && (
               <span className="text-[11px] text-muted mt-0.5">
                 No match in code library — fill fields manually
               </span>
-            ) : null}
+            )}
           </Field>
 
           <Field label="Description" full>
             <input
               type="text"
-              placeholder="e.g. Tire tread depth"
               value={form.description}
               onChange={set("description")}
               className="input"
+              placeholder="Filled from code library when matched"
             />
           </Field>
 
           <Field label="BASIC category">
-            <select value={form.basic} onChange={set("basic")} className="input">
+            <select value={form.basic} onChange={set("basic")} className="input" required>
+              <option value="">— select —</option>
               {BASICS.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.label}
@@ -165,7 +245,7 @@ export default function AddViolationModal({ onClose, onSaved }) {
             </select>
           </Field>
 
-          <Field label="Severity weight (1-10)">
+          <Field label="Severity weight (1–10)">
             <input
               type="number"
               min="1"
